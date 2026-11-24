@@ -309,7 +309,6 @@
       border-color: #ef4444;
     }
 
-    /* Keterangan Hasil Scan (Ditempatkan di Atas Kamera) */
     .scan-feedback {
       margin-bottom: 12px;
       border-radius: 16px;
@@ -550,7 +549,7 @@
           <span>PORTAL PANITIA REGISTRASI</span>
         </div>
         <h1 class="hero-title">SCANNER PRESENSI TRY OUT TKA</h1>
-        <p class="hero-subtitle">GAMA'88 X FUNTASTICJS</p>
+        <p class="hero-subtitle">GAMA'88 X KKG Gugus 2 Jatiasih</p>
       </header>
 
       <div class="card-body">
@@ -563,7 +562,7 @@
             </span>
             <span>STATISTIK KEHADIRAN</span>
           </div>
-          <button type="button" id="btnRefreshStats" class="btn-icon-mini" onclick="sinkronDataServer(false)" title="Perbarui Data">
+          <button type="button" id="btnRefreshStats" class="btn-icon-mini" onclick="sinkronDataServer(false, true)" title="Perbarui Data">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>
             </svg>
@@ -587,7 +586,6 @@
 
         <div id="syncStatusBar" class="sync-status-bar">Menghubungkan ke server database...</div>
 
-        <!-- Keterangan Hasil Scan Ditempatkan di Atas Kamera -->
         <div id="scanFeedbackBox" class="scan-feedback">
           <div class="feedback-header">
             <span id="feedbackIcon"></span>
@@ -690,7 +688,6 @@
       </div>
     </div>
 
-    <!-- Riwayat Kehadiran Bersama (Sinkron Antar-Perangkat) -->
     <div class="glass-card">
       <div class="card-body">
         <div class="section-header-row">
@@ -750,7 +747,7 @@
     </div>
   </div>
 
-  <footer class="footer">&copy; GAMA'88 X FUNTASTICJS. Hak Cipta Dilindungi.</footer>
+  <footer class="footer">&copy; GAMA'88 X Gugus 2 Jatiasih. Hak Cipta Dilindungi.</footer>
 
   <div class="promo-ticker-bar">
     <span class="ticker-badge">
@@ -761,11 +758,10 @@
   </div>
 
   <script>
-    // TEMPEL WEB APP URL (/exec) DARI PROJECT APPS SCRIPT WEBSITE 2 DI BAWAH INI
     const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbyKGHhggeehg1EWJc3nsd9HkKgq_zEXN-t9dvtAikPKBsquR1rT6IZKo3_Ph05cgo3-zQ/exec';
 
-    const CACHE_KEY_PESERTA = 'tka_scanner_peserta_cache_v2';
-    const CACHE_KEY_HISTORY = 'tka_scanner_history_v2';
+    const CACHE_KEY_PESERTA = 'tka_scanner_peserta_cache_v3';
+    const CACHE_KEY_HISTORY = 'tka_scanner_history_v3';
 
     let cachedPeserta = [];
     let scanHistory = [];
@@ -842,6 +838,44 @@
       } catch (e) {}
     }
 
+    function ekstrakKodePeserta(rawInput) {
+      let s = String(rawInput || '').trim().replace(/[\u2010-\u2015\u2212]/g, '-');
+      if (!s) return '';
+
+      if (s.charAt(0) === '{' && s.charAt(s.length - 1) === '}') {
+        try {
+          const obj = JSON.parse(s);
+          const val = obj.noPeserta || obj.no_peserta || obj.kode || obj.nomor || obj.id || '';
+          if (val) return String(val).trim().toUpperCase();
+        } catch (e) {}
+      }
+
+      if (/^https?:\/\//i.test(s) || s.indexOf('?') !== -1) {
+        const mParam = s.match(/[?&](?:kode|noPeserta|no_peserta|nomor|no|id|peserta)=([^&#\s]+)/i);
+        if (mParam && mParam[1]) {
+          try {
+            return decodeURIComponent(mParam[1]).trim().toUpperCase();
+          } catch (e) {
+            return mParam[1].trim().toUpperCase();
+          }
+        }
+      }
+
+      const mLabel = s.match(/(?:no\.?\s*peserta|nomor|kode|id)\s*[:=\-]\s*([A-Za-z0-9._\-\/]+)/i);
+      if (mLabel && mLabel[1]) {
+        return mLabel[1].trim().toUpperCase();
+      }
+
+      return s.split(/[\r\n|]+/)[0].trim().toUpperCase();
+    }
+
+    function normalisasiKode(str) {
+      return String(str || '')
+        .replace(/[\u2010-\u2015\u2212]/g, '-')
+        .replace(/[^A-Z0-9]/gi, '')
+        .toUpperCase();
+    }
+
     function bacaCache() {
       try {
         const rawP = localStorage.getItem(CACHE_KEY_PESERTA);
@@ -869,19 +903,15 @@
       document.getElementById('statBelum').textContent = belum;
     }
 
-    function sinkronDataServer(silent) {
+    function sinkronDataServer(silent, forceFullInit) {
       if (isSyncingNow || pendingScansCount > 0) return;
-      if (GAS_API_URL.indexOf('GANTI_DENGAN_URL') !== -1) {
-        setSyncStatus('URL Apps Script belum diisi pada GAS_API_URL di index.html.', true);
-        return;
-      }
 
       isSyncingNow = true;
       const btn = document.getElementById('btnRefreshStats');
       if (btn && !silent) btn.classList.add('spinning');
       if (!silent) setSyncStatus('Menyinkronkan data dengan Google Sheets...', false);
 
-      const actionName = cachedPeserta.length === 0 ? 'init' : 'stats';
+      const actionName = (forceFullInit || cachedPeserta.length === 0) ? 'init' : 'stats';
       const sep = GAS_API_URL.indexOf('?') === -1 ? '?' : '&';
 
       fetch(GAS_API_URL + sep + 'action=' + actionName + '&t=' + Date.now())
@@ -905,7 +935,6 @@
 
           if (Array.isArray(res.riwayat)) {
             scanHistory = res.riwayat;
-            // Sinkronkan status HADIR di cache lokal sesuai riwayat terbaru dari sheet
             const hadirMap = {};
             scanHistory.forEach(h => {
               if (h.noPeserta) hadirMap[String(h.noPeserta).toUpperCase()] = h.waktu || '';
@@ -926,8 +955,9 @@
 
           if (res.stats) updateStatistikUI(res.stats);
 
-          if (res.logoDataUri) {
-            logoDarkSrc = res.logoDataUri;
+          if (res.logoDataUri || res.logoLightDataUri) {
+            logoDarkSrc = res.logoDataUri || res.logoLightDataUri;
+            logoLightSrc = res.logoLightDataUri || res.logoDataUri;
             applyTheme(document.body.classList.contains('dark-mode'));
           }
 
@@ -953,7 +983,6 @@
       if (mode === 'manual') setTimeout(() => document.getElementById('inputManualKode').focus(), 100);
     }
 
-    // Kamera Live dengan Hardware BarcodeDetector + Fallback jsQR Ringan
     let isCameraRunning = false, videoStream = null, facingMode = 'environment';
     let scanAnimId = null, lastFrameTime = 0, scanPassCounter = 0;
     let lastScannedCode = '', lastScannedAt = 0;
@@ -1156,9 +1185,8 @@
       tanganiHasilKode(kode, true);
     }
 
-    // Validasi Instan dari Cache + Simpan Latar Belakang ke Google Sheets
     function tanganiHasilKode(kodeRaw, bypassCooldown) {
-      const kode = String(kodeRaw || '').trim();
+      const kode = ekstrakKodePeserta(kodeRaw);
       if (!kode) return;
 
       const now = Date.now();
@@ -1166,7 +1194,12 @@
       lastScannedCode = kode;
       lastScannedAt = now;
 
-      const idxLokal = cachedPeserta.findIndex(p => String(p.noPeserta || '').toUpperCase() === kode.toUpperCase());
+      const kodeNorm = normalisasiKode(kode);
+      let idxLokal = cachedPeserta.findIndex(p => String(p.noPeserta || '').trim().toUpperCase() === kode);
+      if (idxLokal === -1 && kodeNorm) {
+        idxLokal = cachedPeserta.findIndex(p => normalisasiKode(p.noPeserta) === kodeNorm || String(p.username || '').trim().toUpperCase() === kode);
+      }
+
       const lokalMatch = idxLokal >= 0 ? cachedPeserta[idxLokal] : null;
       const waktuLokal = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(/\./g, ':') + ' WIB';
 
@@ -1175,7 +1208,6 @@
         const sekolahStr = String(lokalMatch.sekolah || '-').toUpperCase();
         const sesiRuangStr = [lokalMatch.sesi, lokalMatch.lantai, lokalMatch.ruang].filter(v => v && v !== '-').join(' • ') || '-';
 
-        // Jika di cache lokal sudah HADIR, langsung beri peringatan instan tanpa perlu kirim ulang
         if (lokalMatch.status === 'HADIR') {
           bunyiNotifikasi('warning');
           tampilkanFeedback(
@@ -1188,7 +1220,6 @@
           return;
         }
 
-        // Optimistic UI: Langsung tampilkan sukses & bunyikan beep dalam 0.01 detik!
         cachedPeserta[idxLokal].status = 'HADIR';
         cachedPeserta[idxLokal].waktu = waktuLokal;
         try { localStorage.setItem(CACHE_KEY_PESERTA, JSON.stringify(cachedPeserta)); } catch (e) {}
@@ -1210,16 +1241,11 @@
         });
         document.getElementById('inputManualKode').value = '';
         document.getElementById('quickSuggestList').innerHTML = '';
-      } else if (cachedPeserta.length > 0) {
-        // Database sudah ter-cache penuh namun nomor tidak ditemukan
-        bunyiNotifikasi('error');
-        tampilkanFeedback('error', 'Data Tidak Ditemukan', 'Nomor peserta "' + kode + '" tidak terdaftar di database.');
-        return;
       } else {
-        tampilkanFeedback('warning', 'Memvalidasi Kode: ' + kode, 'Menghubungkan ke server presensi...');
+        // Tetap verifikasi ke Google Sheets jika belum ada di cache lokal
+        tampilkanFeedback('warning', 'Memeriksa Kode: ' + kode, 'Mencocokkan dengan database Google Sheets...');
       }
 
-      // Kirim pencatatan ke Google Sheets di latar belakang
       pendingScansCount++;
       const sep = GAS_API_URL.indexOf('?') === -1 ? '?' : '&';
       fetch(GAS_API_URL + sep + 'action=scan&kode=' + encodeURIComponent(kode))
@@ -1253,6 +1279,10 @@
             bunyiNotifikasi('success');
             tampilkanFeedback('success', 'Kehadiran Berhasil Dicatat', String(dataP.nama || kode).toUpperCase() + ' (' + (dataP.noPeserta || kode) + ') — ' + String(dataP.sekolah || '-').toUpperCase());
             tambahKeRiwayat({ noPeserta: dataP.noPeserta || kode, nama: String(dataP.nama || kode).toUpperCase(), sekolah: String(dataP.sekolah || '-').toUpperCase(), sesiRuang: sRuang, waktu: wStr, status: 'Hadir (' + wStr + ')' });
+            document.getElementById('inputManualKode').value = '';
+            document.getElementById('quickSuggestList').innerHTML = '';
+            // Segarkan cache lokal agar data peserta terbaru ikut tersimpan
+            setTimeout(() => sinkronDataServer(true, true), 400);
           }
         })
         .catch(() => {
@@ -1267,7 +1297,7 @@
       const box = document.getElementById('scanFeedbackBox');
       const iconEl = document.getElementById('feedbackIcon');
       box.className = 'scan-feedback';
-      void box.offsetWidth; // trigger ulang animasi pop
+      void box.offsetWidth;
       box.classList.add(tipe);
 
       if (tipe === 'success') {
@@ -1327,10 +1357,9 @@
 
     document.addEventListener('DOMContentLoaded', function() {
       bacaCache();
-      sinkronDataServer(false);
-      // Sinkronisasi otomatis antar-perangkat setiap 15 detik saat halaman dibuka
+      sinkronDataServer(false, true);
       setInterval(function() {
-        if (!document.hidden) sinkronDataServer(true);
+        if (!document.hidden) sinkronDataServer(true, false);
       }, 15000);
     });
   </script>
